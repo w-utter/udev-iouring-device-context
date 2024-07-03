@@ -1,6 +1,5 @@
 use crate::device::Device;
 use crate::rstr::RStr;
-use std::ffi::{CStr, OsStr};
 use std::path::Path;
 use udev::Device as UDev;
 

@@ -9,7 +9,7 @@ pub struct RStr<'a> {
 }
 
 impl<'a> RStr<'a> {
-    fn new(inner: &'a str) -> Self {
+    pub(crate) fn new(inner: &'a str) -> Self {
         Self { inner }
     }
 

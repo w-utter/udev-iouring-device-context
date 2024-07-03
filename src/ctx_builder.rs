@@ -1,13 +1,14 @@
 use core::marker::PhantomData;
-use io_uring::types::BufRing;
+use io_uring::opcode::RecvMulti;
+use io_uring::types::{BufRing, Fd};
 use io_uring::IoUring;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use udev::{Enumerator, MonitorBuilder};
 
 use crate::ctx::Ctx;
-use crate::initial_devices::InitialDevices;
 use crate::err::Error;
+use crate::initial_devices::InitialDevices;
 use std::os::fd::{AsRawFd, RawFd};
 
 #[allow(non_camel_case_types)]
@@ -31,7 +32,7 @@ impl<T: AsRawFd> CtxBuilder<T> {
             ring,
             hp,
             enumerator,
-            _pd: core::marker::PhantomData,
+            _pd: PhantomData,
         })
     }
 
@@ -83,9 +84,9 @@ impl<T: AsRawFd> CtxBuilder<T> {
 pub(crate) fn setup_device_listener(
     fd: RawFd,
     ring: &mut IoUring,
-    buf: &io_uring::types::BufRing,
+    buf: &BufRing,
 ) -> Result<(), Error> {
-    let recv_multi = io_uring::opcode::RecvMulti::new(io_uring::types::Fd(fd), buf.bgid())
+    let recv_multi = RecvMulti::new(Fd(fd), buf.bgid())
         .build()
         .user_data(u64::MAX);
 

@@ -1,15 +1,13 @@
-use core::marker::PhantomData;
 use io_uring::types::BufRing;
 use io_uring::{IoUring, SubmissionQueue};
 use std::collections::HashMap;
-use std::ffi::OsStr;
 use udev::{Enumerator, MonitorSocket};
 
-use crate::ev::{Event, DeviceEvent, IoEvent};
 use crate::ctx_builder::{fd_t, setup_device_listener};
+use crate::err::Error;
+use crate::ev::{DeviceEvent, Event, IoEvent};
 use crate::initial_devices::InitialDevices;
 use crate::raw_device::RawDev;
-use crate::err::Error;
 use std::os::fd::{AsRawFd, RawFd};
 
 pub struct Ctx<T: AsRawFd> {
@@ -115,7 +113,7 @@ fn fd_to_index(fd: i32) -> Result<fd_t, Error> {
     let min = fd_t::MIN as i32;
     if fd < min {
         Err(Error::from_errno(fd))
-    }else {
+    } else {
         Ok(fd as fd_t)
     }
 }

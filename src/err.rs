@@ -1,6 +1,8 @@
+use io_uring::squeue::PushError as DevErr;
 use std::io::Error as IoErr;
 pub enum Error {
-    Os(IoErr)
+    Os(IoErr),
+    Dev(DevErr),
 }
 
 impl Error {
@@ -16,12 +18,19 @@ impl From<IoErr> for Error {
     }
 }
 
+impl From<DevErr> for Error {
+    fn from(d: DevErr) -> Error {
+        Error::Dev(d)
+    }
+}
+
 use std::fmt::{Display, Formatter, Result};
 
 impl Display for Error {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<()> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         match self {
             Self::Os(io) => io.fmt(f),
+            Self::Dev(d) => d.fmt(f),
         }
     }
 }
