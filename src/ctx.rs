@@ -1,5 +1,5 @@
 use io_uring::types::BufRing;
-use io_uring::{IoUring, SubmissionQueue};
+use io_uring::{IoUring, SubmissionQueue, Submitter};
 use std::collections::HashMap;
 use udev::{Enumerator, MonitorSocket};
 
@@ -97,6 +97,10 @@ impl<T: AsRawFd> Ctx<T> {
 
     pub fn submit(&mut self) -> Result<usize, Error> {
         Ok(self.ring.submit()?)
+    }
+
+    pub fn submitter(&mut self) -> Submitter {
+        self.ring.submitter()
     }
 
     pub fn register_buffer(&self, buf: &BufRing) -> Result<(), Error> {
