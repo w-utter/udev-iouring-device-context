@@ -99,7 +99,7 @@ impl<T: AsRawFd> Ctx<T> {
         Ok(self.ring.submit()?)
     }
 
-    pub fn submitter(&mut self) -> Submitter {
+    pub fn submitter(&self) -> Submitter {
         self.ring.submitter()
     }
 
