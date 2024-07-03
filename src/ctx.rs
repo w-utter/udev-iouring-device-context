@@ -99,6 +99,16 @@ impl<T: AsRawFd> Ctx<T> {
         Ok(self.ring.submit()?)
     }
 
+    pub fn register_buffer(&self, buf: &BufRing) -> Result<(), Error> {
+        self.ring.submitter().register_buffer_ring(buf)?;
+        Ok(())
+    }
+
+    pub fn unregister_buffer(&self, buf: &BufRing) -> Result<(), Error> {
+        self.ring.submitter().unregister_buf_ring(buf.bgid())?;
+        Ok(())
+    }
+
     pub fn remove_device(&mut self, fd: i32) -> Result<Option<T>, Error> {
         let idx = fd_to_index(fd)?;
         Ok(self.devs.remove(&idx))
