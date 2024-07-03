@@ -73,9 +73,9 @@ impl<T: AsRawFd> CtxBuilder<T> {
             devs,
             ring,
             hp,
-            enumerator,
             raw,
             buf,
+            enumerator,
             initial_devices,
         ))
     }

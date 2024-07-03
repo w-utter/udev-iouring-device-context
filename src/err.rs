@@ -1,5 +1,7 @@
 use io_uring::squeue::PushError as DevErr;
 use std::io::Error as IoErr;
+
+#[derive(Debug)]
 pub enum Error {
     Os(IoErr),
     Dev(DevErr),
