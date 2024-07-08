@@ -108,6 +108,11 @@ impl<T: AsRawFd> Ctx<T> {
         Ok(())
     }
 
+    pub fn with_ctx(&mut self, f: impl FnOnce(&mut IoUring) -> Result<(), std::io::Error>) -> Result<(), std::io::Error> {
+        let ring = &mut self.ring;
+        f(ring)
+    }
+
     pub fn unregister_buffer(&self, buf: &BufRing) -> Result<(), Error> {
         self.ring.submitter().unregister_buf_ring(buf.bgid())?;
         Ok(())
