@@ -36,18 +36,21 @@ impl<'a> Device<'a> {
     }
 }
 
+#[allow(non_camel_case_types)]
+pub(crate) type unique_dev_t = usize;
+
 pub trait UniqueDevice {
-    fn idx(&self) -> usize;
+    fn idx(&self) -> unique_dev_t;
 }
 
 impl UniqueDevice for Device<'_> {
-    fn idx(&self) {
+    fn idx(&self) -> unique_dev_t {
         todo!()
     }
 }
 
 impl UniqueDevice for udev::Device {
-    fn idx(&self) -> usize {
+    fn idx(&self) -> unique_dev_t {
         todo!()
     }
 }
