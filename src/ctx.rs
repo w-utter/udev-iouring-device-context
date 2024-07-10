@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use udev::{Enumerator, MonitorSocket};
 
 use crate::ctx_builder::{fd_t, setup_device_listener};
+use crate::device::UniqueDevice;
 use crate::err::Error;
 use crate::ev::{DeviceEvent, Event, IoEvent};
 use crate::initial_devices::InitialDevices;
@@ -11,7 +12,8 @@ use crate::raw_device::RawDev;
 use std::os::fd::{AsRawFd, RawFd};
 
 pub struct Ctx<T: AsRawFd> {
-    devs: HashMap<fd_t, T>,
+    procs: HashMap<fd_t, T>,
+    devs: HashMap<usize, i32>,
     ring: IoUring,
     _hp: MonitorSocket,
     hp_fd: RawFd,
@@ -22,13 +24,14 @@ pub struct Ctx<T: AsRawFd> {
 
 impl<T: AsRawFd> Ctx<T> {
     pub(crate) fn new(
-        devs: HashMap<fd_t, T>,
+        devs: HashMap<usize, i32>,
         ring: IoUring,
         _hp: MonitorSocket,
         hp_fd: RawFd,
         hp_br: BufRing,
         _enumerator: Enumerator,
         initial_devices: InitialDevices,
+        procs: HashMap<fd_t, T>,
     ) -> Self {
         Self {
             devs,
@@ -38,6 +41,7 @@ impl<T: AsRawFd> Ctx<T> {
             hp_br,
             _enumerator,
             initial_devices,
+            procs
         }
     }
 
@@ -77,18 +81,48 @@ impl<T: AsRawFd> Ctx<T> {
                     }
                 }
             }
-        } else if let Some(dev) = self.devs.get_mut(&userdata_to_idx(udata)) {
+        } else if let Some(dev) = self.procs.get_mut(&userdata_to_idx(udata)) {
             return Some(Event::Io(IoEvent::from_cqueue(dev, completed)));
         }
         None
     }
 
-    pub fn add_device(&mut self, dev: T) -> Result<Option<T>, Error>
+    pub fn add_device(&mut self, unique: &impl UniqueDevice, dev: T) -> Result<Option<T>, Error>
     where
         T: AsRawFd,
     {
-        let idx = fd_to_index(dev.as_raw_fd())?;
-        Ok(self.devs.insert(idx, dev))
+        let idx = unique.idx();
+        let fd = dev.as_raw_fd();
+
+        if let Some(_) = self.devs.insert(idx, fd) {
+            return Ok(Some(dev));
+        }
+
+        self.add_process(dev)
+    }
+
+    pub fn remove_device(&mut self, unique: &impl UniqueDevice) -> Result<Option<T>, Error> {
+        let idx = unique.idx();
+
+        let fd = match self.devs.remove(&idx) {
+            Some(fd) => fd,
+            _ => return Ok(None),
+        };
+
+        self.remove_process(&fd)
+    }
+
+    pub fn add_process(&mut self, proc: T) -> Result<Option<T>, Error>
+    where
+        T: AsRawFd,
+    {
+        let idx = fd_to_index(proc.as_raw_fd())?;
+        Ok(self.procs.insert(idx, proc))
+    }
+
+    fn remove_process(&mut self, proc: &fd_t) -> Result<Option<T>, Error> {
+        let idx = fd_to_index(proc)?;
+        Ok(self.procs.remove(&idx))
     }
 
     pub fn submission_queue(&mut self) -> SubmissionQueue {
@@ -108,7 +142,10 @@ impl<T: AsRawFd> Ctx<T> {
         Ok(())
     }
 
-    pub fn with_ctx(&mut self, f: impl FnOnce(&mut IoUring) -> Result<(), std::io::Error>) -> Result<(), std::io::Error> {
+    pub fn with_io_ctx(
+        &mut self,
+        f: impl FnOnce(&mut IoUring) -> Result<(), std::io::Error>,
+    ) -> Result<(), std::io::Error> {
         let ring = &mut self.ring;
         f(ring)
     }
@@ -118,13 +155,12 @@ impl<T: AsRawFd> Ctx<T> {
         Ok(())
     }
 
-    pub fn remove_device(&mut self, fd: i32) -> Result<Option<T>, Error> {
-        let idx = fd_to_index(fd)?;
-        Ok(self.devs.remove(&idx))
+    pub fn get_process(&self, idx: &fd_t) -> Option<&T> {
+        self.procs.get(idx)
     }
 
-    pub fn get_device(&self, idx: &fd_t) -> Option<&T> {
-        self.devs.get(idx)
+    pub fn get_process_mut(&mut self, idx: &fd_t) -> Option<&mut T> {
+        self.procs.get_mut(idx)
     }
 }
 

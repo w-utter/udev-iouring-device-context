@@ -56,7 +56,8 @@ impl<T: AsRawFd> CtxBuilder<T> {
             ..
         } = self;
 
-        let devs = HashMap::<fd_t, T>::new();
+        let procs = HashMap::new();
+        let devs = HashMap::new();
 
         let hp = hp.listen()?;
         let raw = hp.as_raw_fd();
@@ -77,6 +78,7 @@ impl<T: AsRawFd> CtxBuilder<T> {
             buf,
             enumerator,
             initial_devices,
+            procs
         ))
     }
 }

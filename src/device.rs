@@ -35,3 +35,19 @@ impl<'a> Device<'a> {
         }
     }
 }
+
+pub trait UniqueDevice {
+    fn idx(&self) -> usize;
+}
+
+impl UniqueDevice for Device<'_> {
+    fn idx(&self) {
+        todo!()
+    }
+}
+
+impl UniqueDevice for udev::Device {
+    fn idx(&self) -> usize {
+        todo!()
+    }
+}
