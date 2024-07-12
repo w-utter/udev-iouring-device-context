@@ -110,7 +110,7 @@ impl<T: AsRawFd> Ctx<T> {
             _ => return Ok(None),
         };
 
-        self.remove_process(&fd)
+        self.remove_process(fd)
     }
 
     pub fn add_process(&mut self, proc: T) -> Result<Option<T>, Error>
@@ -121,8 +121,8 @@ impl<T: AsRawFd> Ctx<T> {
         Ok(self.procs.insert(idx, proc))
     }
 
-    fn remove_process(&mut self, proc: &fd_t) -> Result<Option<T>, Error> {
-        let idx = fd_to_index(proc)?;
+    fn remove_process(&mut self, fd: i32) -> Result<Option<T>, Error> {
+        let idx = fd_to_index(fd)?;
         Ok(self.procs.remove(&idx))
     }
 
