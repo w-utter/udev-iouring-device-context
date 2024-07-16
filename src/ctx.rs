@@ -143,9 +143,9 @@ impl<T: AsRawFd> Ctx<T> {
         Ok(())
     }
 
-    pub fn with_io_ctx<T, E>(
+    pub fn with_io_ctx<U, E>(
         &mut self,
-        f: impl FnOnce(&mut IoUring) -> Result<T, E>,
+        f: impl FnOnce(&mut IoUring) -> Result<U, E>,
     ) -> Result<T, E> {
         let ring = &mut self.ring;
         f(ring)
