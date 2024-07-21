@@ -101,7 +101,7 @@ impl<T: AsRawFd> Ctx<T> {
         self.add_process(dev)
     }
 
-    pub fn remove_device(&mut self, unique: &impl UniqueDevice) -> Result<Option<T>, Error> {
+    pub fn remove_device(&mut self, unique: impl UniqueDevice) -> Result<Option<T>, Error> {
         let idx = unique.idx();
 
         let fd = match self.devs.remove(&idx) {

@@ -54,3 +54,9 @@ impl UniqueDevice for udev::Device {
         self.devnum().unwrap() as _
     }
 }
+
+impl <T> UniqueDevice for &T where T: UniqueDevice {
+    fn idx(&self) -> unique_dev_t {
+        <T as UniqueDevice>::idx(self)
+    }
+}
