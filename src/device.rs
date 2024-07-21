@@ -45,12 +45,12 @@ pub trait UniqueDevice {
 
 impl UniqueDevice for Device<'_> {
     fn idx(&self) -> unique_dev_t {
-        self.devnum.unwrap()
+        self.devnum.unwrap() as _
     }
 }
 
 impl UniqueDevice for udev::Device {
     fn idx(&self) -> unique_dev_t {
-        self.devnum().unwrap()
+        self.devnum().unwrap() as _
     }
 }

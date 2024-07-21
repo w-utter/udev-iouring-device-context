@@ -78,7 +78,7 @@ impl<T: AsRawFd> CtxBuilder<T> {
             buf,
             enumerator,
             initial_devices,
-            procs
+            procs,
         ))
     }
 }

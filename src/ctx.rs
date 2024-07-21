@@ -4,13 +4,12 @@ use std::collections::HashMap;
 use udev::{Enumerator, MonitorSocket};
 
 use crate::ctx_builder::{fd_t, setup_device_listener};
-use crate::device::{UniqueDevice, unique_dev_t};
+use crate::device::{unique_dev_t, UniqueDevice};
 use crate::err::Error;
 use crate::ev::{DeviceEvent, Event, IoEvent};
 use crate::initial_devices::InitialDevices;
 use crate::raw_device::RawDev;
 use std::os::fd::{AsRawFd, RawFd};
-
 
 pub struct Ctx<T: AsRawFd> {
     procs: HashMap<fd_t, T>,
@@ -42,7 +41,7 @@ impl<T: AsRawFd> Ctx<T> {
             hp_br,
             _enumerator,
             initial_devices,
-            procs
+            procs,
         }
     }
 
