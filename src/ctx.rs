@@ -102,9 +102,13 @@ impl<T: AsRawFd> Ctx<T> {
     }
 
     pub fn remove_device(&mut self, unique: impl UniqueDevice) -> Result<Option<T>, Error> {
-        let idx = unique.idx();
+        unsafe {
+            self.remove_device_with_id(unique.idx())
+        }
+    }
 
-        let fd = match self.devs.remove(&idx) {
+    pub unsafe fn remove_device_with_id(&mut self, id: unique_dev_t) -> Result<Option<T>, Error> {
+        let fd = match self.devs.remove(&id) {
             Some(fd) => fd,
             _ => return Ok(None),
         };
