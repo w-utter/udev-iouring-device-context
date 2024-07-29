@@ -101,7 +101,7 @@ impl<T: AsRawFd> Ctx<T> {
         self.add_process(dev)
     }
 
-    pub fn remove_device(&mut self, unique: impl UniqueDevice) -> Result<Option<T>, Error> {
+    pub fn remove_device(&mut self, unique: &impl UniqueDevice) -> Result<Option<T>, Error> {
         unsafe {
             self.remove_device_with_id(unique.idx())
         }
