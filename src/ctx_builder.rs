@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 use io_uring::opcode::RecvMulti;
 use io_uring::types::{BufRing, Fd};
 use io_uring::IoUring;
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use std::ffi::OsStr;
 use udev::{Enumerator, MonitorBuilder};
 
@@ -57,7 +57,7 @@ impl<T: AsRawFd> CtxBuilder<T> {
         } = self;
 
         let procs = HashMap::new();
-        let devs = HashMap::new();
+        let devs = BTreeMap::new();
 
         let hp = hp.listen()?;
         let raw = hp.as_raw_fd();

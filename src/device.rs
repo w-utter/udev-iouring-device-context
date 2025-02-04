@@ -37,7 +37,7 @@ impl<'a> Device<'a> {
 }
 
 #[allow(non_camel_case_types)]
-pub(crate) type unique_dev_t = usize;
+pub(crate) type unique_dev_t<'a> = &'a std::ffi::OsStr;
 
 pub trait UniqueDevice {
     fn idx(&self) -> unique_dev_t;
@@ -45,13 +45,13 @@ pub trait UniqueDevice {
 
 impl UniqueDevice for Device<'_> {
     fn idx(&self) -> unique_dev_t {
-        self.devnum.unwrap() as _
+        self.devpath.as_os_str()
     }
 }
 
 impl UniqueDevice for udev::Device {
     fn idx(&self) -> unique_dev_t {
-        self.devnum().unwrap() as _
+        self.devpath()
     }
 }
 

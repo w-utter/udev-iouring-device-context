@@ -1,7 +1,8 @@
 use io_uring::types::BufRing;
 use io_uring::{IoUring, SubmissionQueue, Submitter};
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use udev::{Enumerator, MonitorSocket};
+use std::ffi::OsString;
 
 use crate::ctx_builder::{fd_t, setup_device_listener};
 use crate::device::{unique_dev_t, UniqueDevice};
@@ -13,7 +14,7 @@ use std::os::fd::{AsRawFd, RawFd};
 
 pub struct Ctx<T: AsRawFd> {
     procs: HashMap<fd_t, T>,
-    devs: HashMap<unique_dev_t, i32>,
+    devs: BTreeMap<OsString, i32>,
     ring: IoUring,
     _hp: MonitorSocket,
     hp_fd: RawFd,
@@ -24,7 +25,7 @@ pub struct Ctx<T: AsRawFd> {
 
 impl<T: AsRawFd> Ctx<T> {
     pub(crate) fn new(
-        devs: HashMap<unique_dev_t, i32>,
+        devs: BTreeMap<OsString, i32>,
         ring: IoUring,
         _hp: MonitorSocket,
         hp_fd: RawFd,
@@ -91,7 +92,7 @@ impl<T: AsRawFd> Ctx<T> {
     where
         T: AsRawFd,
     {
-        let idx = unique.idx();
+        let idx = unique.idx().to_owned();
         let fd = dev.as_raw_fd();
 
         if let Some(_) = self.devs.insert(idx, fd) {
@@ -108,7 +109,7 @@ impl<T: AsRawFd> Ctx<T> {
     }
 
     pub unsafe fn remove_device_with_id(&mut self, id: unique_dev_t) -> Result<Option<T>, Error> {
-        let fd = match self.devs.remove(&id) {
+        let fd = match self.devs.remove(id) {
             Some(fd) => fd,
             _ => return Ok(None),
         };
