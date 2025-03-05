@@ -6,7 +6,7 @@ use std::collections::{HashMap, BTreeMap};
 use std::ffi::OsStr;
 use udev::{Enumerator, MonitorBuilder};
 
-use crate::ctx::Ctx;
+use crate::ctx::{Ctx, MioCtx, Userdata};
 use crate::err::Error;
 use crate::initial_devices::InitialDevices;
 use std::os::fd::{AsRawFd, RawFd};
@@ -17,6 +17,7 @@ pub(crate) type fd_t = u32;
 pub struct CtxBuilder<T: AsRawFd> {
     ring: IoUring,
     hp: MonitorBuilder,
+    mio: Option<(mio::Poll, usize)>,
     enumerator: Enumerator,
     _pd: PhantomData<T>,
 }
@@ -33,6 +34,7 @@ impl<T: AsRawFd> CtxBuilder<T> {
             hp,
             enumerator,
             _pd: PhantomData,
+            mio: None,
         })
     }
 
@@ -48,11 +50,19 @@ impl<T: AsRawFd> CtxBuilder<T> {
         Ok(self)
     }
 
+    pub fn register_mio(mut self, f: impl FnOnce(&mut mio::Poll) -> std::io::Result<()>, events_capacity: usize) -> std::io::Result<Self> {
+        let mut poll = mio::Poll::new()?;
+        f(&mut poll)?;
+        self.mio = Some((poll, events_capacity));
+        Ok(self)
+    }
+
     pub fn build(self) -> Result<Ctx<T>, Error> {
         let CtxBuilder {
             mut ring,
             hp,
             enumerator,
+            mio,
             ..
         } = self;
 
@@ -70,6 +80,10 @@ impl<T: AsRawFd> CtxBuilder<T> {
         setup_device_listener(raw, &mut ring, &buf)?;
         let initial_devices = InitialDevices::new(&enumerator);
 
+        let mio = setup_mio(mio, &mut ring)?;
+
+        ring.submitter().submit()?;
+
         Ok(Ctx::new(
             devs,
             ring,
@@ -79,6 +93,7 @@ impl<T: AsRawFd> CtxBuilder<T> {
             enumerator,
             initial_devices,
             procs,
+            mio,
         ))
     }
 }
@@ -90,12 +105,32 @@ pub(crate) fn setup_device_listener(
 ) -> Result<(), Error> {
     let recv_multi = RecvMulti::new(Fd(fd), buf.bgid())
         .build()
-        .user_data(u64::MAX);
+        .user_data(Userdata::DEVICE_EVENT);
 
     unsafe {
         ring.submission().push(&recv_multi)?;
     }
 
-    ring.submitter().submit()?;
     Ok(())
+}
+
+pub(crate) fn setup_mio(mio: Option<(mio::Poll, usize)>, ring: &mut IoUring) -> Result<Option<MioCtx>, Error> {
+    Ok(if let Some((poll, cap)) = mio {
+        let poll = io_uring::opcode::PollAdd::new(Fd(poll.as_raw_fd()), libc::POLLIN as _)
+            .multi(true)
+            .build()
+            .user_data(Userdata::MIO_EVENT)
+            ;
+        unsafe {
+            ring.submission().push(&poll)
+        }
+
+        Some(MioCtx {
+            inner: poll,
+            events: mio::Events::with_capacity(cap),
+            ev_idx: 0,
+        })
+    } else {
+        None
+    })
 }

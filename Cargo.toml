@@ -8,3 +8,5 @@ udev = "0.8"
 libudev-sys = "0.1"
 libc = "0.2"
 io-uring = {version = "0.6", git = "https://github.com/w-utter/io-uring", branch = "read_multishot"}
+
+mio = "^0.6.23"

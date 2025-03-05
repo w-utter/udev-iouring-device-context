@@ -2,17 +2,21 @@ use crate::device::Device;
 use io_uring::cqueue::Entry as CQEntry;
 use udev::Device as UDev;
 
+#[derive(Debug)]
 pub enum Event<'a, T> {
     Device(DeviceEvent<'a>),
     Io(IoEvent<'a, T>),
+    Mio(mio::Event),
 }
 
+#[derive(Debug)]
 pub struct IoEvent<'a, T> {
     pub dev: &'a mut T,
     pub userdata: u64,
     pub result: Result<IoEventOk, i32>,
 }
 
+#[derive(Debug)]
 pub struct IoEventOk {
     pub flags: u32,
     pub result: u32,

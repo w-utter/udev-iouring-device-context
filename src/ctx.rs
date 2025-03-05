@@ -19,6 +19,7 @@ pub struct Ctx<T: AsRawFd> {
     _hp: MonitorSocket,
     hp_fd: RawFd,
     hp_br: BufRing,
+    mio: Option<MioCtx>,
     _enumerator: Enumerator,
     initial_devices: InitialDevices,
 }
@@ -33,6 +34,7 @@ impl<T: AsRawFd> Ctx<T> {
         _enumerator: Enumerator,
         initial_devices: InitialDevices,
         procs: HashMap<fd_t, T>,
+        mio: Option<MioCtx>,
     ) -> Self {
         Self {
             devs,
@@ -43,6 +45,7 @@ impl<T: AsRawFd> Ctx<T> {
             _enumerator,
             initial_devices,
             procs,
+            mio,
         }
     }
 
@@ -51,39 +54,66 @@ impl<T: AsRawFd> Ctx<T> {
             return Some(Event::Device(DeviceEvent::Added(dev)));
         }
 
+        match &mut self.mio {
+            Some(m) if m.ev_idx > 0 => {
+                if let Some(ev) = m.events.iter().nth(m.ev_idx) {
+                    m.ev_idx += 1;
+                    return Some(Event::Mio(ev))
+                }
+                m.ev_idx = 0;
+                m.events.clear();
+            }
+            _ => (),
+        }
+
         let completed = self.ring.completion().next()?;
         let udata = completed.user_data();
 
-        if udata == u64::MAX {
-            unsafe { self.hp_br.advance(1) }
-            let len = if completed.result() > 0 {
-                completed.result() as usize
-            } else {
-                println!("erred on step with: {completed:?}\nrestarting listener");
-                setup_device_listener(self.hp_fd, &mut self.ring, &self.hp_br).unwrap();
-                return None;
-            };
+        match Userdata::from_raw(udata) {
+            Userdata::Device => {
+                unsafe { self.hp_br.advance(1) }
+                let len = if completed.result() > 0 {
+                    completed.result() as usize
+                } else {
+                    println!("erred on step with: {completed:?}\nrestarting listener");
+                    setup_device_listener(self.hp_fd, &mut self.ring, &self.hp_br).unwrap();
+                    return None;
+                };
 
-            if let Some(id) = self.hp_br.buffer_id_from_cqe_flags(completed.flags()) {
-                let read_buf = unsafe { self.hp_br.read_buffer(id) };
-                let bytes = &read_buf[..len];
+                if let Some(id) = self.hp_br.buffer_id_from_cqe_flags(completed.flags()) {
+                    let read_buf = unsafe { self.hp_br.read_buffer(id) };
+                    let bytes = &read_buf[..len];
 
-                if let Some(dev) = RawDev::from_bytes(bytes) {
-                    match dev.parse_into_actual_device() {
-                        Ok(dev) => {
-                            return Some(Event::Device(DeviceEvent::Added(dev)));
-                        }
-                        Err(partial) => {
-                            //whenever a device is removed we cannot preform a lookup on it to get
-                            //more information, so we cant turn it into an actual udev device
-                            let removed = partial?;
-                            return Some(Event::Device(DeviceEvent::Removed(removed)));
+                    if let Some(dev) = RawDev::from_bytes(bytes) {
+                        match dev.parse_into_actual_device() {
+                            Ok(dev) => {
+                                return Some(Event::Device(DeviceEvent::Added(dev)));
+                            }
+                            Err(partial) => {
+                                //whenever a device is removed we cannot preform a lookup on it to get
+                                //more information, so we cant turn it into an actual udev device
+                                let removed = partial?;
+                                return Some(Event::Device(DeviceEvent::Removed(removed)));
+                            }
                         }
                     }
                 }
             }
-        } else if let Some(dev) = self.procs.get_mut(&userdata_to_idx(udata)) {
-            return Some(Event::Io(IoEvent::from_cqueue(dev, completed)));
+            Userdata::Mio => {
+                if let Some(m) = &mut self.mio {
+                    let _ = m.inner.poll(&mut m.events, Some(std::time::Duration::ZERO));
+                    
+                    if let Some(ev) = m.events.iter().next() {
+                        m.ev_idx = 1;
+                        return Some(Event::Mio(ev))
+                    }
+                }
+            }
+            Userdata::User(u) => {
+                if let Some(dev) = self.procs.get_mut(&(u as fd_t)) {
+                    return Some(Event::Io(IoEvent::from_cqueue(dev, completed)));
+                }
+            }
         }
         None
     }
@@ -178,6 +208,27 @@ fn fd_to_index(fd: i32) -> Result<fd_t, Error> {
     }
 }
 
-fn userdata_to_idx(userdata: u64) -> fd_t {
-    userdata as fd_t
+pub(crate) struct MioCtx {
+    pub(crate) inner: mio::Poll,
+    pub(crate) events: mio::Events,
+    pub(crate) ev_idx: usize,
+}
+
+pub(crate) enum Userdata {
+    Device,
+    Mio,
+    User(u64),
+}
+
+impl Userdata {
+    pub(crate) const DEVICE_EVENT: u64 = u64::MAX;
+    pub(crate) const MIO_EVENT: u64 = u64::MAX ^ (1 << 63);
+
+    fn from_raw(raw: u64) -> Self {
+        match raw {
+            Self::DEVICE_EVENT => Self::Device,
+            Self::MIO_EVENT => Self::Mio,
+            u => Self::User(u),
+        }
+    }
 }
