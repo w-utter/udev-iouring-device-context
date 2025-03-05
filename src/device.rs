@@ -55,7 +55,10 @@ impl UniqueDevice for udev::Device {
     }
 }
 
-impl <T> UniqueDevice for &T where T: UniqueDevice {
+impl<T> UniqueDevice for &T
+where
+    T: UniqueDevice,
+{
     fn idx(&self) -> unique_dev_t {
         <T as UniqueDevice>::idx(self)
     }

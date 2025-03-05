@@ -1,8 +1,8 @@
 use io_uring::types::BufRing;
 use io_uring::{IoUring, SubmissionQueue, Submitter};
-use std::collections::{HashMap, BTreeMap};
-use udev::{Enumerator, MonitorSocket};
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
+use udev::{Enumerator, MonitorSocket};
 
 use crate::ctx_builder::{fd_t, setup_device_listener};
 use crate::device::{unique_dev_t, UniqueDevice};
@@ -58,7 +58,7 @@ impl<T: AsRawFd> Ctx<T> {
             Some(m) if m.ev_idx > 0 => {
                 if let Some(ev) = m.events.iter().nth(m.ev_idx) {
                     m.ev_idx += 1;
-                    return Some(Event::Mio(ev))
+                    return Some(Event::Mio(ev));
                 }
                 m.ev_idx = 0;
                 m.events.clear();
@@ -102,10 +102,10 @@ impl<T: AsRawFd> Ctx<T> {
             Userdata::Mio => {
                 if let Some(m) = &mut self.mio {
                     let _ = m.inner.poll(&mut m.events, Some(std::time::Duration::ZERO));
-                    
+
                     if let Some(ev) = m.events.iter().next() {
                         m.ev_idx = 1;
-                        return Some(Event::Mio(ev))
+                        return Some(Event::Mio(ev));
                     }
                 }
             }
@@ -133,9 +133,7 @@ impl<T: AsRawFd> Ctx<T> {
     }
 
     pub fn remove_device(&mut self, unique: &impl UniqueDevice) -> Result<Option<T>, Error> {
-        unsafe {
-            self.remove_device_with_id(unique.idx())
-        }
+        unsafe { self.remove_device_with_id(unique.idx()) }
     }
 
     pub unsafe fn remove_device_with_id(&mut self, id: unique_dev_t) -> Result<Option<T>, Error> {

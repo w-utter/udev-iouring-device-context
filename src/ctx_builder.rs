@@ -2,7 +2,7 @@ use core::marker::PhantomData;
 use io_uring::opcode::RecvMulti;
 use io_uring::types::{BufRing, Fd};
 use io_uring::IoUring;
-use std::collections::{HashMap, BTreeMap};
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
 use udev::{Enumerator, MonitorBuilder};
 
@@ -50,7 +50,11 @@ impl<T: AsRawFd> CtxBuilder<T> {
         Ok(self)
     }
 
-    pub fn register_mio(mut self, f: impl FnOnce(&mut mio::Poll) -> std::io::Result<()>, events_capacity: usize) -> std::io::Result<Self> {
+    pub fn register_mio(
+        mut self,
+        f: impl FnOnce(&mut mio::Poll) -> std::io::Result<()>,
+        events_capacity: usize,
+    ) -> std::io::Result<Self> {
         let mut poll = mio::Poll::new()?;
         f(&mut poll)?;
         self.mio = Some((poll, events_capacity));
@@ -114,19 +118,21 @@ pub(crate) fn setup_device_listener(
     Ok(())
 }
 
-pub(crate) fn setup_mio(mio: Option<(mio::Poll, usize)>, ring: &mut IoUring) -> Result<Option<MioCtx>, Error> {
-    Ok(if let Some((poll, cap)) = mio {
-        let poll = io_uring::opcode::PollAdd::new(Fd(poll.as_raw_fd()), libc::POLLIN as _)
+pub(crate) fn setup_mio(
+    mio: Option<(mio::Poll, usize)>,
+    ring: &mut IoUring,
+) -> Result<Option<MioCtx>, Error> {
+    Ok(if let Some((m, cap)) = mio {
+        let poll = io_uring::opcode::PollAdd::new(Fd(m.as_raw_fd()), libc::POLLIN as _)
             .multi(true)
             .build()
-            .user_data(Userdata::MIO_EVENT)
-            ;
+            .user_data(Userdata::MIO_EVENT);
         unsafe {
-            ring.submission().push(&poll)
+            ring.submission().push(&poll)?;
         }
 
         Some(MioCtx {
-            inner: poll,
+            inner: m,
             events: mio::Events::with_capacity(cap),
             ev_idx: 0,
         })
