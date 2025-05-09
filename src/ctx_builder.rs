@@ -61,7 +61,7 @@ impl<T: AsRawFd> CtxBuilder<T> {
 
         let hp = hp.listen()?;
         let raw = hp.as_raw_fd();
-        let mut buf = BufRing::new(128, 4096, 5).unwrap();
+        let mut buf = BufRing::new(128, 4096, 0).unwrap();
 
         buf.init();
         ring.submitter().register_buffer_ring(&buf).unwrap();
