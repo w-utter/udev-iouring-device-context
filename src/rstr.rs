@@ -27,7 +27,7 @@ impl<'a> RStr<'a> {
 }
 
 use core::fmt;
-impl <'a> fmt::Debug for RStr<'a> {
+impl<'a> fmt::Debug for RStr<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.inner.fmt(f)
     }

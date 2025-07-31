@@ -1,10 +1,10 @@
-use io_uring::types::BufRing;
 use io_uring::{IoUring, SubmissionQueue, Submitter};
-use std::collections::{HashMap, BTreeMap};
-use udev::{Enumerator, MonitorSocket};
+use io_uring_buf_ring::{buf_ring_state, BufRing};
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
+use udev::{Enumerator, MonitorSocket};
 
-use crate::ctx_builder::{fd_t, setup_device_listener};
+use crate::ctx_builder::{fd_t, register_buf_ring, setup_device_listener};
 use crate::device::{unique_dev_t, UniqueDevice};
 use crate::err::Error;
 use crate::ev::{DeviceEvent, Event, IoEvent};
@@ -18,7 +18,7 @@ pub struct Ctx<T: AsRawFd> {
     ring: IoUring,
     _hp: MonitorSocket,
     hp_fd: RawFd,
-    hp_br: BufRing,
+    hp_br: BufRing<buf_ring_state::Init>,
     _enumerator: Enumerator,
     initial_devices: InitialDevices,
 }
@@ -29,7 +29,7 @@ impl<T: AsRawFd> Ctx<T> {
         ring: IoUring,
         _hp: MonitorSocket,
         hp_fd: RawFd,
-        hp_br: BufRing,
+        hp_br: BufRing<buf_ring_state::Init>,
         _enumerator: Enumerator,
         initial_devices: InitialDevices,
         procs: HashMap<fd_t, T>,
@@ -56,30 +56,33 @@ impl<T: AsRawFd> Ctx<T> {
 
         if udata == u64::MAX {
             unsafe { self.hp_br.advance(1) }
-            let len = if completed.result() > 0 {
-                completed.result() as usize
-            } else {
-                println!("erred on step with: {completed:?}\nrestarting listener");
-                setup_device_listener(self.hp_fd, &mut self.ring, &self.hp_br).unwrap();
-                return None;
+
+            let res = self.hp_br.buffer_id_from_cqe(&completed);
+            let buf_entry = match res {
+                Err(ref e) => {
+                    println!("erred ({e:?}) on step with: {completed:?}\nrestarting listener");
+                    drop(res);
+                    setup_device_listener(self.hp_fd, &mut self.ring, &self.hp_br).unwrap();
+                    return None;
+                }
+                Ok(buf_entry) => buf_entry?,
             };
 
-            if let Some(id) = self.hp_br.buffer_id_from_cqe_flags(completed.flags()) {
-                let read_buf = unsafe { self.hp_br.read_buffer(id) };
-                let bytes = &read_buf[..len];
+            // SAFETY: the buffer will outlive the function scope as it is
+            // memory mapped.
+            let buf = unsafe { &*(buf_entry.buffer() as *const _) };
 
-                if let Some(dev) = RawDev::from_bytes(bytes) {
-                    match dev.parse_into_actual_device() {
-                        Ok(dev) => {
-                            return Some(Event::Device(DeviceEvent::Added(dev)));
-                        }
-                        Err(partial) => {
-                            //whenever a device is removed we cannot preform a lookup on it to get
-                            //more information, so we cant turn it into an actual udev device
-                            let removed = partial?;
-                            return Some(Event::Device(DeviceEvent::Removed(removed)));
-                        }
-                    }
+            let raw_dev = RawDev::from_bytes(buf)?;
+
+            match raw_dev.parse_into_actual_device() {
+                Ok(dev) => {
+                    return Some(Event::Device(DeviceEvent::Added(dev)));
+                }
+                Err(partial) => {
+                    //whenever a device is removed we cannot preform a lookup on it to get
+                    //more information, so we cant turn it into an actual udev device
+                    let removed = partial?;
+                    return Some(Event::Device(DeviceEvent::Removed(removed)));
                 }
             }
         } else if let Some(dev) = self.procs.get_mut(&userdata_to_idx(udata)) {
@@ -103,9 +106,7 @@ impl<T: AsRawFd> Ctx<T> {
     }
 
     pub fn remove_device(&mut self, unique: &impl UniqueDevice) -> Result<Option<T>, Error> {
-        unsafe {
-            self.remove_device_with_id(unique.idx())
-        }
+        unsafe { self.remove_device_with_id(unique.idx()) }
     }
 
     pub unsafe fn remove_device_with_id(&mut self, id: unique_dev_t) -> Result<Option<T>, Error> {
@@ -115,6 +116,22 @@ impl<T: AsRawFd> Ctx<T> {
         };
 
         self.remove_process(fd)
+    }
+
+    pub fn register_buffer(
+        &self,
+        buf: BufRing<buf_ring_state::Uninit>,
+        buf_id: &mut u16,
+    ) -> Result<BufRing<buf_ring_state::Init>, Error> {
+        register_buf_ring(&self.ring, buf, buf_id)
+    }
+
+    pub fn unregister_buffer(
+        &self,
+        buf: BufRing<buf_ring_state::Init>,
+    ) -> Result<BufRing<buf_ring_state::Uninit>, (Error, BufRing<buf_ring_state::Init>)> {
+        buf.unregister(&self.ring.submitter())
+            .map_err(|(err, s)| (err.into(), s))
     }
 
     pub fn add_process(&mut self, proc: T) -> Result<Option<T>, Error>
@@ -142,11 +159,6 @@ impl<T: AsRawFd> Ctx<T> {
         self.ring.submitter()
     }
 
-    pub fn register_buffer(&self, buf: &BufRing) -> Result<(), Error> {
-        self.ring.submitter().register_buffer_ring(buf)?;
-        Ok(())
-    }
-
     pub fn with_io_ctx<U, E>(
         &mut self,
         f: impl FnOnce(&mut IoUring) -> Result<U, E>,
@@ -155,8 +167,10 @@ impl<T: AsRawFd> Ctx<T> {
         f(ring)
     }
 
-    pub fn unregister_buffer(&self, buf: &BufRing) -> Result<(), Error> {
-        self.ring.submitter().unregister_buf_ring(buf.bgid())?;
+    pub fn submit_entry(&mut self, entry: &io_uring::squeue::Entry) -> Result<(), Error> {
+        unsafe {
+            self.ring.submission().push(&entry)?;
+        }
         Ok(())
     }
 

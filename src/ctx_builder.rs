@@ -1,8 +1,9 @@
 use core::marker::PhantomData;
 use io_uring::opcode::RecvMulti;
-use io_uring::types::{BufRing, Fd};
+use io_uring::types::Fd;
 use io_uring::IoUring;
-use std::collections::{HashMap, BTreeMap};
+use io_uring_buf_ring::{buf_ring_state, BufRing};
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsStr;
 use udev::{Enumerator, MonitorBuilder};
 
@@ -48,7 +49,7 @@ impl<T: AsRawFd> CtxBuilder<T> {
         Ok(self)
     }
 
-    pub fn build(self) -> Result<Ctx<T>, Error> {
+    pub fn build(self, buf_id: &mut u16) -> Result<Ctx<T>, Error> {
         let CtxBuilder {
             mut ring,
             hp,
@@ -61,13 +62,9 @@ impl<T: AsRawFd> CtxBuilder<T> {
 
         let hp = hp.listen()?;
         let raw = hp.as_raw_fd();
-        let mut buf = BufRing::new(128, 4096, 0).unwrap();
+        let buf = BufRing::new(128, 4096, 0).unwrap();
 
-        buf.init();
-        ring.submitter().register_buffer_ring(&buf).unwrap();
-        buf.init_buffers();
-
-        setup_device_listener(raw, &mut ring, &buf)?;
+        let buf = initalize_device_listener(raw, &mut ring, buf_id, buf)?;
         let initial_devices = InitialDevices::new(&enumerator);
 
         Ok(Ctx::new(
@@ -83,10 +80,43 @@ impl<T: AsRawFd> CtxBuilder<T> {
     }
 }
 
+pub(crate) fn register_buf_ring(
+    ring: &IoUring,
+    buf: BufRing<buf_ring_state::Uninit>,
+    buf_id: &mut u16,
+) -> Result<BufRing<buf_ring_state::Init>, Error> {
+    let mut res = buf.register(&ring.submitter());
+
+    while let Err((e, mut buf)) = res {
+        if let std::io::ErrorKind::AlreadyExists = e.kind() {
+            *buf_id += 1;
+            buf.set_bgid(*buf_id);
+            res = buf.register(&ring.submitter());
+        } else {
+            return Err(e.into());
+        }
+    }
+    let buf = unsafe { res.unwrap_unchecked() }.init();
+
+    Ok(buf)
+}
+
+fn initalize_device_listener(
+    fd: RawFd,
+    ring: &mut IoUring,
+    buf_id: &mut u16,
+    buf: BufRing<buf_ring_state::Uninit>,
+) -> Result<BufRing<buf_ring_state::Init>, Error> {
+    let buf = register_buf_ring(ring, buf, buf_id)?;
+
+    setup_device_listener(fd, ring, &buf)?;
+    Ok(buf)
+}
+
 pub(crate) fn setup_device_listener(
     fd: RawFd,
     ring: &mut IoUring,
-    buf: &BufRing,
+    buf: &BufRing<buf_ring_state::Init>,
 ) -> Result<(), Error> {
     let recv_multi = RecvMulti::new(Fd(fd), buf.bgid())
         .build()
