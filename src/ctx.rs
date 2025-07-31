@@ -55,8 +55,6 @@ impl<T: AsRawFd> Ctx<T> {
         let udata = completed.user_data();
 
         if udata == u64::MAX {
-            unsafe { self.hp_br.advance(1) }
-
             let res = self.hp_br.buffer_id_from_cqe(&completed);
             let buf_entry = match res {
                 Err(ref e) => {
