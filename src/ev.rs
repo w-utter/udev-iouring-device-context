@@ -1,6 +1,4 @@
-use crate::device::Device;
 use io_uring::cqueue::Entry as CQEntry;
-use udev::Device as UDev;
 
 pub enum Event<'a, T> {
     Device(DeviceEvent<'a>),
@@ -52,8 +50,12 @@ impl<'a, T> IoEvent<'a, T> {
     }
 }
 
+use u_dev::device::{instance, origin};
+use u_dev::hotplug::Device as AddedDevice;
+use u_dev::Device;
+
 #[derive(Debug)]
 pub enum DeviceEvent<'a> {
-    Added(UDev),
-    Removed(Device<'a>),
+    Added(AddedDevice<'a>),
+    Removed(Device<instance::Borrowed<'a>, origin::Hotplug>),
 }

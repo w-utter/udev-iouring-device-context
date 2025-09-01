@@ -1,65 +1,31 @@
-use crate::rstr::RStr;
-
-#[derive(Debug)]
-pub struct Device<'a> {
-    pub devpath: RStr<'a>,
-    pub subsystem: Option<RStr<'a>>,
-    pub devname: Option<RStr<'a>>,
-    pub devtype: Option<RStr<'a>>,
-    pub bus_num: Option<RStr<'a>>,
-    pub devnum: Option<libc::dev_t>,
-    pub driver: Option<RStr<'a>>,
-    pub seqnum: Option<u64>,
-}
-
-impl<'a> Device<'a> {
-    pub(crate) fn new(
-        devpath: RStr<'a>,
-        subsystem: Option<RStr<'a>>,
-        devname: Option<RStr<'a>>,
-        devtype: Option<RStr<'a>>,
-        bus_num: Option<RStr<'a>>,
-        devnum: Option<libc::dev_t>,
-        driver: Option<RStr<'a>>,
-        seqnum: Option<u64>,
-    ) -> Self {
-        Self {
-            devpath,
-            subsystem,
-            devname,
-            devtype,
-            bus_num,
-            devnum,
-            driver,
-            seqnum,
-        }
-    }
-}
+use u_dev::Udev;
 
 #[allow(non_camel_case_types)]
 pub(crate) type unique_dev_t<'a> = &'a std::ffi::OsStr;
 
-pub trait UniqueDevice {
-    fn idx(&self) -> unique_dev_t;
+pub trait UniqueDevice: private::Sealed {
+    fn idx(&self, ctx: &Udev) -> unique_dev_t;
 }
 
-impl UniqueDevice for Device<'_> {
-    fn idx(&self) -> unique_dev_t {
-        self.devpath.as_os_str()
+mod private {
+    pub trait Sealed {}
+}
+
+impl private::Sealed for u_dev::hotplug::Device<'_> {}
+
+impl UniqueDevice for u_dev::hotplug::Device<'_> {
+    fn idx(&self, ctx: &Udev) -> unique_dev_t {
+        self.devpath(ctx).as_os_str()
     }
 }
 
-impl UniqueDevice for udev::Device {
-    fn idx(&self) -> unique_dev_t {
-        self.devpath()
-    }
-}
-
-impl<T> UniqueDevice for &T
-where
-    T: UniqueDevice,
+impl<D: u_dev::device::DevImpl, K: u_dev::device::Extra<D>> private::Sealed
+    for u_dev::Device<D, K>
 {
-    fn idx(&self) -> unique_dev_t {
-        <T as UniqueDevice>::idx(self)
+}
+
+impl<D: u_dev::device::DevImpl, K: u_dev::device::Extra<D>> UniqueDevice for u_dev::Device<D, K> {
+    fn idx(&self, ctx: &Udev) -> unique_dev_t {
+        self.devpath(ctx).as_os_str()
     }
 }

@@ -2,53 +2,46 @@ use io_uring::{IoUring, SubmissionQueue, Submitter};
 use io_uring_buf_ring::{buf_ring_state, BufRing};
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
-use udev::{Enumerator, MonitorSocket};
+use u_dev::{socket_state, Monitor, Udev};
 
 use crate::ctx_builder::{fd_t, register_buf_ring, setup_device_listener};
 use crate::device::{unique_dev_t, UniqueDevice};
 use crate::err::Error;
 use crate::ev::{DeviceEvent, Event, IoEvent};
-use crate::initial_devices::InitialDevices;
-use crate::raw_device::RawDev;
-use std::os::fd::{AsRawFd, RawFd};
+use std::os::fd::AsRawFd;
 
-pub struct Ctx<T: AsRawFd> {
+pub struct Ctx<'b, 'c, T: AsRawFd> {
     procs: HashMap<fd_t, T>,
     devs: BTreeMap<OsString, i32>,
     ring: IoUring,
-    _hp: MonitorSocket,
-    hp_fd: RawFd,
+    udev: &'c Udev,
+    monitor: Monitor<'b, 'c, socket_state::Listening>,
     hp_br: BufRing<buf_ring_state::Init>,
-    _enumerator: Enumerator,
-    initial_devices: InitialDevices,
 }
 
-impl<T: AsRawFd> Ctx<T> {
+impl<'b, 'c, T: AsRawFd> Ctx<'b, 'c, T> {
     pub(crate) fn new(
         devs: BTreeMap<OsString, i32>,
         ring: IoUring,
-        _hp: MonitorSocket,
-        hp_fd: RawFd,
         hp_br: BufRing<buf_ring_state::Init>,
-        _enumerator: Enumerator,
-        initial_devices: InitialDevices,
         procs: HashMap<fd_t, T>,
+        monitor: Monitor<'b, 'c, socket_state::Listening>,
+        udev: &'c Udev,
     ) -> Self {
         Self {
             devs,
             ring,
-            _hp,
-            hp_fd,
             hp_br,
-            _enumerator,
-            initial_devices,
             procs,
+            monitor,
+            udev,
         }
     }
 
     pub fn step(&mut self) -> Option<Event<T>> {
-        if let Some(dev) = self.initial_devices.next() {
-            return Some(Event::Device(DeviceEvent::Added(dev)));
+        if let Some(dev) = self.monitor.recv_enum() {
+            //enumerated devices that are already mounted
+            return Some(Event::Device(DeviceEvent::Added(dev.into())));
         }
 
         let completed = self.ring.completion().next()?;
@@ -60,7 +53,7 @@ impl<T: AsRawFd> Ctx<T> {
                 Err(ref e) => {
                     println!("erred ({e:?}) on step with: {completed:?}\nrestarting listener");
                     drop(res);
-                    setup_device_listener(self.hp_fd, &mut self.ring, &self.hp_br).unwrap();
+                    setup_device_listener(&self.monitor, &mut self.ring, &self.hp_br).unwrap();
                     return None;
                 }
                 Ok(buf_entry) => buf_entry?,
@@ -70,30 +63,32 @@ impl<T: AsRawFd> Ctx<T> {
             // memory mapped.
             let buf = unsafe { &*(buf_entry.buffer() as *const _) };
 
-            let raw_dev = RawDev::from_bytes(buf)?;
+            let msg = match u_dev::UdevMsg::new(buf) {
+                Ok(Some(msg)) => msg,
+                _ => return None,
+            };
 
-            match raw_dev.parse_into_actual_device() {
-                Ok(dev) => {
-                    return Some(Event::Device(DeviceEvent::Added(dev)));
-                }
-                Err(partial) => {
-                    //whenever a device is removed we cannot preform a lookup on it to get
-                    //more information, so we cant turn it into an actual udev device
-                    let removed = partial?;
-                    return Some(Event::Device(DeviceEvent::Removed(removed)));
-                }
+            let dev = u_dev::Device::from_monitor(self.udev, msg, |_, _| ())?;
+
+            use u_dev::netlink_msg::Action;
+
+            match dev.action() {
+                Some(Action::Add) => Some(Event::Device(DeviceEvent::Added(dev.into()))),
+                Some(Action::Remove) => Some(Event::Device(DeviceEvent::Removed(dev))),
+                _ => None,
             }
         } else if let Some(dev) = self.procs.get_mut(&userdata_to_idx(udata)) {
-            return Some(Event::Io(IoEvent::from_cqueue(dev, completed)));
+            Some(Event::Io(IoEvent::from_cqueue(dev, completed)))
+        } else {
+            None
         }
-        None
     }
 
     pub fn add_device(&mut self, unique: &impl UniqueDevice, dev: T) -> Result<Option<T>, Error>
     where
         T: AsRawFd,
     {
-        let idx = unique.idx().to_owned();
+        let idx = unique.idx(self.udev).to_owned();
         let fd = dev.as_raw_fd();
 
         if let Some(_) = self.devs.insert(idx, fd) {
@@ -104,7 +99,7 @@ impl<T: AsRawFd> Ctx<T> {
     }
 
     pub fn remove_device(&mut self, unique: &impl UniqueDevice) -> Result<Option<T>, Error> {
-        unsafe { self.remove_device_with_id(unique.idx()) }
+        unsafe { self.remove_device_with_id(unique.idx(self.udev)) }
     }
 
     pub unsafe fn remove_device_with_id(&mut self, id: unique_dev_t) -> Result<Option<T>, Error> {
