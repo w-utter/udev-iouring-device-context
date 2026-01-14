@@ -4,8 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-udev = "0.8"
-libudev-sys = "0.1"
 libc = "0.2"
 io-uring = "0.7"
-io-uring-buf-ring = { git = "https://github.com/w-utter/io-uring-buf-ring"}
+io-uring-buf-ring = { git = "https://github.com/w-utter/io-uring-buf-ring" }
+u-dev = { git = "https://github.com/w-utter/u-dev" }
