@@ -8,3 +8,6 @@ libc = "0.2"
 io-uring = "0.7"
 io-uring-buf-ring = { git = "https://github.com/w-utter/io-uring-buf-ring" }
 u-dev = { git = "https://github.com/w-utter/u-dev" }
+
+[features]
+raw = []

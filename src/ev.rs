@@ -9,6 +9,8 @@ pub struct IoEvent<'a, T> {
     pub dev: &'a mut T,
     pub userdata: u64,
     pub result: Result<IoEventOk, i32>,
+    #[cfg(feature = "raw")]
+    pub raw_entry: CQEntry,
 }
 
 pub struct IoEventOk {
@@ -34,6 +36,8 @@ impl<'a, T> IoEvent<'a, T> {
             userdata,
             result,
             dev,
+            #[cfg(feature = "raw")]
+            raw_entry: cq,
         }
     }
 
